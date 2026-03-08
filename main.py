@@ -1,11 +1,14 @@
 import os
 import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
 
 from calculos.lodos_activados import calcular_lodos_activados_excel_v3
 from core.selector_tren import seleccionar_tren_tratamiento
 from diagrams.pfd import generar_pfd_tren, exportar_pfd_tren_png
 from diagrams.pfd_lodos import generar_pfd_lodos_activados, exportar_pfd_lodos_png
 from reports.memoria_docx import generar_memoria
+from calculos.perfil_hidraulico import calcular_perfil_hidraulico
 
 st.set_page_config(page_title="PTAR Designer", page_icon="💧", layout="wide")
 
@@ -70,7 +73,8 @@ menu = st.sidebar.selectbox(
     "PFD del Tren de Tratamiento",
     "PFD - Lodos Activados",
     "06 - Reactores Aeróbicos - Lodos Activados",
-    "Resumen del Proyecto"
+    "Resumen del Proyecto",
+    "Perfil Hidráulico"
 ]
 )
 
@@ -338,6 +342,91 @@ elif menu == "PFD - Lodos Activados":
     else:
         st.warning("Aún no has calculado el módulo de Lodos Activados.")
         st.info("Primero ve a '06 - Reactores Aeróbicos - Lodos Activados', ejecuta el cálculo y luego vuelve a esta pantalla.")
+
+# -------------------------------------------------
+# PERFIL HIDRAULICO
+# -------------------------------------------------
+
+elif menu == "Perfil Hidráulico":
+
+    st.header("Perfil Hidráulico Automático - Versión 2")
+
+    st.write("Este módulo calcula la cota de entrada y salida de cada unidad del tren a partir de una cota inicial y pérdidas de carga estimadas, y genera un gráfico automático del perfil hidráulico.")
+
+    cota_inicial = st.number_input(
+        "Cota inicial de lámina de agua (m)",
+        value=100.00,
+        step=0.01
+    )
+
+    st.subheader("Pérdidas de carga por unidad")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        perdida_rejillas = st.number_input("Pérdida en Rejillas (m)", value=0.05, step=0.01)
+        perdida_desarenador = st.number_input("Pérdida en Desarenador (m)", value=0.08, step=0.01)
+        perdida_primario = st.number_input("Pérdida en Sedimentador Primario (m)", value=0.10, step=0.01)
+        perdida_uasb = st.number_input("Pérdida en UASB (m)", value=0.15, step=0.01)
+
+    with col2:
+        perdida_lodos = st.number_input("Pérdida en Lodos Activados (m)", value=0.12, step=0.01)
+        perdida_secundario = st.number_input("Pérdida en Sedimentador Secundario (m)", value=0.10, step=0.01)
+        perdida_desinfeccion = st.number_input("Pérdida en Desinfección (m)", value=0.05, step=0.01)
+
+    if st.button("Calcular perfil hidráulico"):
+
+        unidades = [
+            {"unidad": "Rejillas", "perdida_m": perdida_rejillas},
+            {"unidad": "Desarenador", "perdida_m": perdida_desarenador},
+            {"unidad": "Sedimentador Primario", "perdida_m": perdida_primario},
+            {"unidad": "UASB", "perdida_m": perdida_uasb},
+            {"unidad": "Lodos Activados", "perdida_m": perdida_lodos},
+            {"unidad": "Sedimentador Secundario", "perdida_m": perdida_secundario},
+            {"unidad": "Desinfección", "perdida_m": perdida_desinfeccion},
+        ]
+
+        resultados_perfil = calcular_perfil_hidraulico(cota_inicial, unidades)
+
+        df_perfil = pd.DataFrame(resultados_perfil)
+
+        st.subheader("Resultados del perfil hidráulico")
+        st.table(df_perfil)
+
+        cota_final = df_perfil.iloc[-1]["Cota salida (m)"]
+        perdida_total = cota_inicial - cota_final
+
+        st.subheader("Resumen")
+
+        col3, col4, col5 = st.columns(3)
+
+        with col3:
+            st.metric("Cota inicial", f"{cota_inicial:.3f} m")
+
+        with col4:
+            st.metric("Cota final", f"{cota_final:.3f} m")
+
+        with col5:
+            st.metric("Pérdida total acumulada", f"{perdida_total:.3f} m")
+
+        # ---------------------------------------------
+        # GRÁFICO AUTOMÁTICO DEL PERFIL HIDRÁULICO
+        # ---------------------------------------------
+        st.subheader("Gráfico del perfil hidráulico")
+
+        unidades_x = ["Inicio"] + df_perfil["Unidad"].tolist()
+        cotas_y = [cota_inicial] + df_perfil["Cota salida (m)"].tolist()
+
+        fig, ax = plt.subplots(figsize=(12, 5))
+        ax.plot(unidades_x, cotas_y, marker="o")
+        ax.set_title("Perfil Hidráulico Simplificado")
+        ax.set_xlabel("Unidades del tren de tratamiento")
+        ax.set_ylabel("Cota de lámina de agua (m)")
+        ax.grid(True)
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
+
+        st.pyplot(fig)
 
 # -------------------------------------------------
 # LODOS ACTIVADOS - VERSIÓN 3
